@@ -1,13 +1,13 @@
 {
-    'method': 'random',
-    'name': 'sweep',
-    'metric': {
-        'goal': 'maximize',
-        'name': 'eval/f1'
+    "method": "random",
+    "name": "random",
+    "metric": {
+        "goal": "maximize",
+        "name": "eval/f1"
         },
-    'parameters': {
-        'batch_size': {'values': [5, 10, 15]},
-        'epochs': {'values': [1, 2, 3, 4, 5]},
-        'lr': {'max': 0.1, 'min': 0.0001}
+    "parameters": {
+        "batch_size": {"values": [5, 10, 15]},
+        "epochs": {"values": [1, 2, 3]},
+        "lr": {"max": 0.1, "min": 0.0001}
      }
 }
