@@ -18,13 +18,13 @@
       "max": 0.1
       },
     "weight_decay": {
-        "values": [0.1, 0.2]
+        "values": [0.1]
       }
   },
   "early_terminate": {
       "type": "hyperband",
       "s": 2,
       "eta": 3,
-      "max_iter": 27
+      "max_iter": 2
   }
 }
