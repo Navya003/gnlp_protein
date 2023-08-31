@@ -7,10 +7,10 @@
   },
   "parameters" : {
     "epochs" : {
-      "values" : [1, 2]
+      "values" : [1, 5, 10]
     },
     "batch_size": {
-        "values": [8, 16]
+        "values": [2, 8, 16]
         },
     "learning_rate" :{
       "distribution": "log_uniform_values",
