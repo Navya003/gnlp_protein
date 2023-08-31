@@ -7,7 +7,7 @@
   },
   "parameters" : {
     "epochs" : {
-      "values" : [5, 10]
+      "values" : [1, 5, 10]
     },
     "batch_size": {
         "values": [8, 16, 32, 64]
