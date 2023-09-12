@@ -1,13 +1,13 @@
 #!/bin/bash
 sbatch <<EOT
 #!/bin/bash
-#SBATCH --job-name=${1}.${2}.sweep
+#SBATCH --job-name=32000.sweep
 #SBATCH --time=1-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=64000
-#SBATCH --output=${1}.${2}.sweep.out
+#SBATCH --output=32000.sweep.out
 #SBATCH --account=lz25
 #SBATCH --export=NONE
 #SBATCH --partition=m3g
@@ -22,9 +22,7 @@ conda activate /projects/lz25/navyat/conda/envs/something
 
 date
 
-vocab_size=$1
-chunk=$2
-
+vocab_size=32000
 MODEL="distilbert"
 SCOUNT=128
 
@@ -37,9 +35,9 @@ sweep \
   --hyperparameter_sweep params.json.1 \
   --entity_name tyagilab \
   --project_name p_sweep \
-  --group_name ${1}.${2} \
-  --output_dir ../../results/prot.${1}.${2} \
-  --vocab_size ${1} \
+  --group_name vocab_32000 \
+  --output_dir p_sweep_32000 \
+  --vocab_size 32000 \
   --label_names "labels" \
   --model distilbert \
   --sweep_count 128 \
