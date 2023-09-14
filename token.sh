@@ -1,4 +1,6 @@
 #!/bin/bash
+sbatch <<EOT
+#!/bin/bash
 #SBATCH --job-name="protein"
 #SBATCH --time=04:00:00
 #SBATCH --nodes=1
@@ -34,5 +36,7 @@ for i in 2000 8000 16000 32000; do
     -o protein.${i}.512 \
     --no_reverse_complement -c 512
 done
+exit 0
+EOT
 
 date
