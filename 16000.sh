@@ -32,7 +32,7 @@ sweep \
   prot/16000__tokens.json \
   --test prot/16000_data.csv/test.parquet \
   --valid prot/16000_data.csv/valid.parquet \
-  --hyperparameter_sweep params.json.1 \
+  --hyperparameter_sweep params.json \
   --entity_name tyagilab \
   --project_name p_sweep \
   --group_name vocab_16000 \
