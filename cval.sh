@@ -32,6 +32,8 @@ cross_validate \
   --group_name c_val_2000.512 \
   --label_names "labels" \
   --config_from_run tyagilab/prot/lm52lquq
+  --output_dir cval_results
+  --overwrite_output_dir
   
 
 date
