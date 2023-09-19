@@ -28,7 +28,7 @@ cross_validate \
   --test prot.2000.512/test.parquet \
   --valid prot.2000.512/valid.parquet \
   --entity_name tyagilab \
-  --project_name p_sweep \
+  --project_name prot \
   --group_name c_val_2000.512 \
   --label_names "labels" \
   --config_from_run tyagilab/prot/lm52lquq
