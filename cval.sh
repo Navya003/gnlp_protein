@@ -33,8 +33,7 @@ cross_validate \
   --label_names "labels" \
   --config_from_run tyagilab/prot/lm52lquq \
   --output_dir cval_results \
-  --overwrite_output_dir
-  
+  --override_output_dir
 
 date
 exit 0
