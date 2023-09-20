@@ -1,0 +1,14 @@
+{
+    "version": 1,
+    "storagePolicy": "wandb-storage-policy-v1",
+    "storagePolicyConfig": {
+        "storageLayout": "V2"
+    },
+    "contents": {
+        "roc_curve_table.table.json": {
+            "digest": "7ow/fbXV0PSr9ksF/uCb7A==",
+            "birthArtifactID": "QXJ0aWZhY3Q6NTY1Njg4ODg0",
+            "size": 566
+        }
+    }
+}
