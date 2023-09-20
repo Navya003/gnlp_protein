@@ -1,14 +1,14 @@
 {
-    "version": 1,
-    "storagePolicy": "wandb-storage-policy-v1",
-    "storagePolicyConfig": {
-        "storageLayout": "V2"
-    },
-    "contents": {
-        "conf_mat_table.table.json": {
-            "digest": "G94B0e44NZv2e7VBaD/YjA==",
-            "birthArtifactID": "QXJ0aWZhY3Q6NTY1Njg5MDU5",
-            "size": 630
-        }
+  "version": 1,
+  "storagePolicy": "wandb-storage-policy-v1",
+  "storagePolicyConfig": {
+    "storageLayout": "V2"
+  },
+  "contents": {
+    "0000.parquet": {
+      "digest": "sishrSc9rp2hiJdmEzjBHw==",
+      "birthArtifactID": "QXJ0aWZhY3Q6NTY1NjkwMjQx",
+      "size": 163015
     }
+  }
 }
