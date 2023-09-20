@@ -5,10 +5,10 @@
         "storageLayout": "V2"
     },
     "contents": {
-        "roc_curve_table.table.json": {
-            "digest": "7ow/fbXV0PSr9ksF/uCb7A==",
-            "birthArtifactID": "QXJ0aWZhY3Q6NTY1Njg4ODg0",
-            "size": 566
+        "pr_table.table.json": {
+            "digest": "mOaAd6oa7gVndD4xSpgkBA==",
+            "birthArtifactID": "QXJ0aWZhY3Q6NTY1Njg4OTQx",
+            "size": 1517
         }
     }
 }
