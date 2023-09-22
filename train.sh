@@ -31,7 +31,6 @@ train \
   --entity_name tyagilab \
   --project_name prot \
   --group_name train.2000 \
-  --label_names "labels" \
   --config_from_run tyagilab/prot/lm52lquq \
   --output_dir train.out \
   --override_output_dir
