@@ -25,7 +25,7 @@ date
 train \
   prot.2000.512/train.parquet \
   "parquet" \
-  random.json \
+  prot.2000.json \
   --test prot.2000.512/test.parquet \
   --valid prot.2000.512/valid.parquet \
   --entity_name tyagilab \
