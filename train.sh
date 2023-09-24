@@ -33,7 +33,7 @@ train \
   --group_name train.2000 \
   --config_from_run tyagilab/prot/lm52lquq \
   --output_dir train.out \
-  --label_names "labels" \
+  --label_names "labels" 
 
 
 date
