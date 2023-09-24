@@ -18,7 +18,7 @@ sbatch <<EOT
 #SBATCH --mail-type=ALL
 #======START=====
 source /projects/lz25/navyat/conda
-conda activate /projects/lz25/navyat/conda/envs/something
+conda activate /projects/lz25/navyat/conda/envs/gnlp
 
 date
 
@@ -33,7 +33,8 @@ train \
   --group_name train.2000 \
   --config_from_run tyagilab/prot/lm52lquq \
   --output_dir train.out \
-  --override_output_dir
+  --label_names "labels" \
+
 
 date
 exit 0
