@@ -1,7 +1,5 @@
 - 👋 Hi, I’m Navya Tyagi
-- 👀 I’m interested in Data Science and Programming.
-- 🌱 I’m currently learning Physical Sciences and Data Science.
-- 💞️ I’m looking to collaborate on various projects.
+
 - 📫 You can reach me at: tyagin.india@gmail.com
 
 <!---
