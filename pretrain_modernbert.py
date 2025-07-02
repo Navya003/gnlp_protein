@@ -10,6 +10,7 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorForLanguageModeling,
+    AutoTokenizer # Added AutoTokenizer for robust loading
 )
 import evaluate # For evaluation (e.g., perplexity)
 
@@ -23,7 +24,6 @@ except ImportError:
     print("Please ensure your 'transformers' installation from GitHub includes these classes,")
     print("or that you have a custom 'modern_bert' package installed if they are external.")
     # Exit or raise error if these are critical and not found
-    # For a robust script, you might want to sys.exit(1) here
     exit("Required ModernBERT classes not found. Exiting.")
 
 
@@ -41,7 +41,7 @@ os.makedirs(output_dir, exist_ok=True)
 
 # Pre-training specific configurations
 tokenizer_name = "answerdotai/ModernBERT-base" # Tokenizer for pre-training
-mlm_probability = 0.3
+mlm_probability = 0.15 # Common MLM probability is 0.15, not 0.3 (you had 0.3)
 max_sequence_length = 512 # Chunk size for pre-training
 
 learning_rate = 5e-5 # Common learning rate for pre-training
@@ -104,12 +104,44 @@ print(f"Test dataset size: {len(split_datasets['test'])}")
 
 # --- Tokenizer Loading ---
 print(f"Loading tokenizer: {tokenizer_name}")
-hf_tokenizer = PreTrainedTokenizerFast.from_pretrained(tokenizer_name)
+# Use AutoTokenizer for more flexible loading
+hf_tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+
+# Ensure essential special tokens are available for the tokenizer
+# This helps prevent issues if the pre-trained tokenizer doesn't explicitly define them
+if hf_tokenizer.pad_token is None:
+    hf_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+if hf_tokenizer.unk_token is None:
+    hf_tokenizer.add_special_tokens({'unk_token': '[UNK]'})
+if hf_tokenizer.cls_token is None:
+    hf_tokenizer.add_special_tokens({'cls_token': '[CLS]'})
+if hf_tokenizer.sep_token is None:
+    hf_tokenizer.add_special_tokens({'sep_token': '[SEP]'})
+if hf_tokenizer.mask_token is None:
+    hf_tokenizer.add_special_tokens({'mask_token': '[MASK]'})
+
+# Re-verify special token IDs after potentially adding them
+print(f"Tokenizer vocab size: {len(hf_tokenizer)}")
+print(f"Tokenizer pad_token_id: {hf_tokenizer.pad_token_id}")
+print(f"Tokenizer bos_token_id: {hf_tokenizer.bos_token_id}")
+print(f"Tokenizer eos_token_id: {hf_tokenizer.eos_token_id}")
+print(f"Tokenizer cls_token_id: {hf_tokenizer.cls_token_id}")
+print(f"Tokenizer sep_token_id: {hf_tokenizer.sep_token_id}")
+print(f"Tokenizer mask_token_id: {hf_tokenizer.mask_token_id}")
+
 
 # Identify the text/sequence column name from the dataset's features
-# Assuming it's 'text' based on your previous logs for 'genome_subset_1000'
-# Verify this by inspecting split_datasets['train'].column_names if uncertain
-sequence_column_name = "text"
+# For 'InstaDeepAI/nucleotide_transformer_downstream_tasks' (promoter_all), the column is 'sequence'
+# You can verify this by printing split_datasets['train'].column_names
+sequence_column_name = "sequence" # <--- **IMPORTANT CHANGE HERE**
+
+# Validate that the column exists in the dataset
+if sequence_column_name not in split_datasets["train"].column_names:
+    raise ValueError(
+        f"Column '{sequence_column_name}' not found in the dataset. "
+        f"Available columns are: {split_datasets['train'].column_names}. "
+        "Please check your dataset and adjust 'sequence_column_name' accordingly."
+    )
 
 def tokenize_function(examples):
     return hf_tokenizer(examples[sequence_column_name], return_attention_mask=False)
@@ -158,22 +190,22 @@ print(f"Test dataset size after chunking: {len(lm_dataset['test'])}")
 # --- Initialize ModernBERT Model ---
 bert_config = ModernBertConfig(
     vocab_size=hf_tokenizer.vocab_size,
+    hidden_size=768,          # <--- Added/Set for 'base' model
+    num_hidden_layers=12,     # <--- Added/Set for 'base' model
+    num_attention_heads=12,   # <--- Added/Set for 'base' model
+    intermediate_size=3072,   # <--- Common intermediate size for 'base' (4 * hidden_size)
     max_position_embeddings=max_sequence_length,
     global_rope_theta=10000,
+    type_vocab_size=1,        # Set explicitly as per your original script
     pad_token_id=hf_tokenizer.pad_token_id,
     bos_token_id=hf_tokenizer.bos_token_id,
     eos_token_id=hf_tokenizer.eos_token_id,
     cls_token_id=hf_tokenizer.cls_token_id,
     sep_token_id=hf_tokenizer.sep_token_id,
-    # You might want to add hidden_size, num_hidden_layers, num_attention_heads
-    # to match the base ModernBERT configuration if you are not loading
-    # from a pretrained checkpoint. For pre-training from scratch, these are key.
-    # hidden_size=768, # Example for a 'base' model
-    # num_hidden_layers=12, # Example for a 'base' model
-    # num_attention_heads=12, # Example for a 'base' model
 )
 model = ModernBertForMaskedLM(bert_config)
 print("ModernBERT model initialized for Masked Language Modeling.")
+print(f"Model number of parameters: {model.num_parameters():.2e}") # Print model size
 
 # --- Data Collator ---
 data_collator = DataCollatorForLanguageModeling(
