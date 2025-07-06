@@ -25,7 +25,7 @@ echo "Current directory: $(pwd)"
 
 # --- Environment Setup ---
 source /projects/lz25/navyat/conda
-conda activate /projects/lz25/navyat/conda/envs/genomeenv # <--- ADJUST THIS PATH/ENV NAME IF DIFFERENT
+conda activate /projects/lz25/navyat/conda/envs/modernbert_py310
 
 echo "Conda environment activated: $(conda env list | grep '*' | awk '{print $NF}')"
 echo "Python interpreter: $(which python)"
