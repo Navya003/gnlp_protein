@@ -21,7 +21,8 @@ def main():
     current_sequences = []
 
     for i, item in enumerate(dataset):
-        seq = item['text']
+        # Corrected: Changed 'text' to 'sequence'
+        seq = item['sequence']
         if len(seq) > 512:
             # Chunk long sequences
             chunks = chunk_sequence(seq, 512)
