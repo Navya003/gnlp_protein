@@ -33,7 +33,7 @@ source /projects/lz25/navyat/conda
 # IMPORTANT: Replace 'gnlp' with the name of the conda environment
 # where you installed all the dependencies for the ModernBERT script
 # (e.g., 'modernbert_pretrain_env' or a new one you create for this project).
-conda activate /projects/lz25/navyat/conda/envs/genomeenv # <--- ADJUST THIS PATH/ENV NAME
+conda activate /projects/lz25/navyat/conda/envs/modernbert_py310
 
 # Check activated environment (optional, for debugging)
 echo "Conda environment activated: $(conda env list | grep '*' | awk '{print $NF}')"
