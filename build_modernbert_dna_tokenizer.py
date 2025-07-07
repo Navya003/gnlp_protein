@@ -1,4 +1,4 @@
-# filename: build_modernbert_dna_tokenizer.py
+# filename: build_modernbert_dna_tokenizer.py (UPDATED)
 
 # Required imports
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, trainers, processors, decoders
@@ -14,7 +14,7 @@ DNA_DATA_DIR = "genome_subset_1000"
 def get_training_corpus(dataset_path):
     """
     Loads a Hugging Face dataset from disk (a directory) and yields text sequences for training.
-    Assumes the text content is in a column named 'text'.
+    Assumes the text content is in a column named 'sequence'.
     """
     if not os.path.exists(dataset_path):
         raise FileNotFoundError(f"The dataset directory was not found at: {dataset_path}")
@@ -23,11 +23,12 @@ def get_training_corpus(dataset_path):
     dataset = load_from_disk(dataset_path)
     print(f"Dataset loaded with {len(dataset)} examples. Expected columns: {dataset.column_names}")
     
+    # --- IMPORTANT CHANGE HERE: Look for 'sequence' column ---
+    if 'sequence' not in dataset.column_names:
+        raise ValueError(f"Error: 'sequence' column not found in the dataset. Available columns: {dataset.column_names}")
+
     for item in dataset:
-        if 'text' in item:
-            yield item['text'].strip()
-        else:
-            print(f"Warning: 'text' key not found in a dataset example. Skipping example: {item}")
+        yield item['sequence'].strip() # Changed from item['text'] to item['sequence']
 
 # --- 2. Initialize the Tokenizer with a Unigram model ---
 print("Step 1: Initializing Tokenizer with Unigram model...")
