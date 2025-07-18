@@ -2,17 +2,17 @@
 sbatch <<EOT
 #!/bin/bash
 #SBATCH --job-name=modernbert_pretrain
-#SBATCH --time=2-00:00:00         # Increased time limit to 2 days
+#SBATCH --time=2-00:00:00         # Time limit set to 2 days
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=20
-#SBATCH --mem=64000
+#SBATCH --cpus-per-task=10        # Reduced CPU cores to 10 (common starting point for GPU jobs)
+#SBATCH --mem=64000               # Keeping memory at 64GB, adjust if you confirm lower usage
 #SBATCH --output=modernbert_pretrain_%j.out
 #SBATCH --error=modernbert_pretrain_%j.err
 #SBATCH --account=lz25
-#SBATCH --export=NONE             # Keeping this as it is
+#SBATCH --export=NONE
 #SBATCH --partition=m3g
-#SBATCH --gres=gpu:V100:1
+#SBATCH --gres=gpu:1              # Changed from V100 to any available GPU (speeds up allocation)
 ##SBATCH --partition=genomics
 ##SBATCH --qos=genomics
 #SBATCH --mail-user=ext-ntyagi@monash.edu
@@ -24,7 +24,7 @@ echo "Starting ModernBERT Pre-training Job: $SLURM_JOB_NAME (ID: $SLURM_JOB_ID)"
 echo "Running on host: $(hostname)"
 
 # --- Navigate to working directory ---
-cd /home/navyat/nt # Added command to navigate to the working directory
+cd /home/navyat/nt
 echo "Current directory: $(pwd)"
 
 # --- Environment Setup ---
@@ -35,7 +35,7 @@ echo "Conda environment activated: $(conda env list | grep '*' | awk '{print $NF
 echo "Python interpreter: $(which python)"
 
 # Load CUDA module for GPU utilization
-module load cuda # Added to ensure GPU use
+module load cuda
 
 nvidia-smi # Display GPU status
 
