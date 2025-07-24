@@ -1,50 +1,49 @@
-#!/bin/bash
-sbatch <<EOT
-#!/bin/bash
-#SBATCH --job-name=modernbert_pretrain
-#SBATCH --time=2-00:00:00         # Time limit set to 2 days
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=10        # Reduced CPU cores to 10 (common starting point for GPU jobs)
-#SBATCH --mem=64000               # Keeping memory at 64GB, adjust if you confirm lower usage
-#SBATCH --output=modernbert_pretrain_%j.out
-#SBATCH --error=modernbert_pretrain_%j.err
-#SBATCH --account=lz25
-#SBATCH --export=NONE
-#SBATCH --partition=m3g
-#SBATCH --gres=gpu:1              # Changed from V100 to any available GPU (speeds up allocation)
-##SBATCH --partition=genomics
-##SBATCH --qos=genomics
-#SBATCH --mail-user=ext-ntyagi@monash.edu
-#SBATCH --mail-type=ALL
+#!/bin/bash                                                                                                                                                                                                                                              
+sbatch <<EOT                                                                                                                                                                                                                                            
+#!/bin/bash                                                                                                                                                                                                                                              
+#SBATCH --job-name=modernbert_pretrain                                                                                                                                                                                                                    
+#SBATCH --time=2-00:00:00        # Time limit set to 2 days                                                                                                                                                                                                  
+#SBATCH --nodes=1                                                                                                                                                                                                                                         
+#SBATCH --ntasks=1                                                                                                                                                                                                                                        
+#SBATCH --cpus-per-task=10       # Reduced CPU cores to 10 (common starting point for GPU jobs)                                                                                                                                                              
+#SBATCH --mem=64000              # Keeping memory at 64GB, adjust if you confirm lower usage                                                                                                                                                                   
+#SBATCH --output=modernbert_pretrain_%j.out                                                                                                                                                                                                               
+#SBATCH --error=modernbert_pretrain_%j.err                                                                                                                                                                                                                
+#SBATCH --account=lz25                                                                                                                                                                                                                                    
+#SBATCH --export=NONE                                                                                                                                                                                                                                     
+#SBATCH --partition=m3g                                                                                                                                                                                                                                   
+#SBATCH --gres=gpu:1             # Changed from V100 to any available GPU (speeds up allocation)                                                                                                                                                              
+##SBATCH --partition=genomics                                                                                                                                                                                                                             
+##SBATCH --qos=genomics                                                                                                                                                                                                                                   
+#SBATCH --mail-user=ext-ntyagi@monash.edu                                                                                                                                                                                                                 
+#SBATCH --mail-type=ALL                                                                                                                                                                                                                                   
+#======START=====                                                                                                                                                                                                                                         
+date                                                                                                                                                                                                                                                      
+echo "Starting ModernBERT Pre-training Job: $SLURM_JOB_NAME (ID: $SLURM_JOB_ID)"                                                                                                                                                                          
+echo "Running on host: $(hostname)"                                                                                                                                                                                                                       
+# --- Navigate to working directory ---                                                                                                                                                                                                                    
+cd /projects/lz25/navyat/nt                                                                                                                                                                                                                               
+echo "Current directory: $(pwd)"      
 
-#======START=====
-date
-echo "Starting ModernBERT Pre-training Job: $SLURM_JOB_NAME (ID: $SLURM_JOB_ID)"
-echo "Running on host: $(hostname)"
-
-# --- Navigate to working directory ---
-cd /home/navyat/nt
-echo "Current directory: $(pwd)"
-
-# --- Environment Setup ---
-source /projects/lz25/navyat/conda/etc/profile.d/conda.sh
-conda activate /projects/lz25/navyat/conda/envs/modernbert_py310
-
-echo "Conda environment activated: $(conda env list | grep '*' | awk '{print $NF}')"
-echo "Python interpreter: $(which python)"
-
-# Load CUDA module for GPU utilization
-module load cuda
-
-nvidia-smi # Display GPU status
-
-# --- Run the Python Pre-training Script ---
-echo "Executing Python pre-training script..."
-python pretrain_modernbert.py
-
-# --- End Job ---
-echo "Python script finished."
-date
-exit 0
+# --- Environment Setup ---                                                                                                                                                                                                                                
+source /projects/lz25/navyat/conda/etc/profile.d/conda.sh                                                                                                                                                                                                 
+conda activate /projects/lz25/navyat/conda/envs/modernbert_py310                                                                                                                                                                                          
+echo "Conda environment activated: $(conda env list | grep '*' | awk '{print $NF}')"                                                                                                                                                                      
+echo "Python interpreter: $(which python)"                                                                                                                                                                                                                
+# Load CUDA module for GPU utilization                                                                                                                                                                                                                     
+module load cuda                                                                                                                                                                                                                                          
+nvidia-smi # Display GPU status                                                                                                                                                                                                                           
+                                                                                                                                                                                                                                                          
+# Set Hugging Face cache directory to your project space                                                                                                                                                                                                  
+export HF_HOME="/projects/lz25/navyat/hf_cache"                                                                                                                                                                                                           
+mkdir -p "$HF_HOME"                                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+# --- Run the Python Pre-training Script ---                                                                                                                                                                                                               
+echo "Executing Python pre-training script..."                                                                                                                                                                                                            
+python pretrain_modernbert.py                                                                                                                                                
+                                                                                                                                                                                                                                                          
+# --- End Job ---                                                                                                                                                                                                                                          
+echo "Python script finished."                                                                                                                                                                                                                            
+date                                                                                                                                                                                                                                                      
+exit 0                                                                                                                                                                                                                                                    
 EOT
