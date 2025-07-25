@@ -3,11 +3,11 @@
 import os
 import math
 import torch
-# import pandas as pd # Not needed for direct HF dataset loading
-# import numpy as np # Not needed for direct HF dataset loading
-# import wandb # Commented out wandb import
+import pandas as pd
+import numpy as np
+import wandb
 
-from datasets import load_dataset, Dataset
+from datasets import Dataset
 from transformers import (
     PreTrainedTokenizerFast,
     ModernBertConfig,
@@ -18,48 +18,32 @@ from transformers import (
     EvalPrediction
 )
 
-# --- Updated load_data function to load from Hugging Face Hub ---
-def load_data(dataset_name: str, dataset_split: str = "train", dataset_config: str = None):
+def load_data(csv_path, max_samples=None):
     """
-    Loads a dataset from the Hugging Face Hub using datasets.load_dataset().
-
-    Args:
-        dataset_name (str): The name of the dataset on Hugging Face Hub (e.g., "InstaDeepAI/multi_species_genomes").
-        dataset_split (str): The split to load (e.g., "train", "validation", "test"). Defaults to "train".
-        dataset_config (str, optional): The name of a specific dataset configuration if available
-                                        (e.g., "6kbp" for multi_species_genomes). Defaults to None.
-
-    Returns:
-        Dataset: The loaded Hugging Face dataset object.
-
-    Raises:
-        Exception: If there's an error loading the dataset, usually due to network
-                   issues, incorrect dataset name/config, or insufficient disk space
-                   in the cache directory (controlled by HF_HOME).
+    Loads data from a CSV file.
+    If max_samples is an integer, it loads up to that many samples.
+    If max_samples is None, it loads all samples from the CSV.
     """
-    print(f"Attempting to load dataset '{dataset_name}' with split '{dataset_split}' from Hugging Face Hub...")
-    if dataset_config:
-        print(f"Using dataset configuration: {dataset_config}")
+    print(f"Loading data from: {csv_path}")
+    df = pd.read_csv(csv_path)
+    df['length'] = df['sequence'].str.len()
+    print("Dataset loaded. Sequence length stats:\n", df['length'].describe())
 
-    try:
-        # This is the correct call for loading from the Hugging Face Hub
-        # It will automatically manage downloading and caching to the path set by HF_HOME.
-        dataset = load_dataset(dataset_name, dataset_config, split=dataset_split)
-        print(f"Successfully loaded dataset '{dataset_name}' with {len(dataset)} examples.")
+    dataset = Dataset.from_pandas(df)
+    dataset = dataset.rename_column("sequence", "text")
+    
+    if max_samples is not None:
+        # Ensure we don't try to select more rows than exist
+        num_to_select = min(max_samples, len(dataset))
+        print(f"Selecting {num_to_select} samples from the CSV.")
+        return dataset.select(range(num_to_select))
+    else:
+        print(f"Loading all {len(dataset)} samples from the CSV.")
         return dataset
-    except Exception as e:
-        print(f"ERROR: Failed to load dataset '{dataset_name}': {e}")
-        hf_home_env = os.environ.get("HF_HOME")
-        if hf_home_env:
-            print(f"Hugging Face cache directory is set to: {hf_home_env}")
-            print(f"Please ensure directory '{hf_home_env}' exists and has write permissions and sufficient disk space.")
-        else:
-            print("HF_HOME environment variable is NOT set. Hugging Face cache defaults to ~/.cache/huggingface.")
-            print("Consider setting HF_HOME to a directory with more space (e.g., in /projects/lz25/navyat/).")
-        raise # Re-raise the exception so the job fails clearly
 
 
 def load_tokenizer(tokenizer_path):
+    print(f"Loading tokenizer from: {tokenizer_path}")
     tokenizer = PreTrainedTokenizerFast(
         tokenizer_file=tokenizer_path,
         special_tokens=["<unk>", "<pad>", "<cls>", "<sep>", "<mask>"],
@@ -74,49 +58,40 @@ def load_tokenizer(tokenizer_path):
         tokenizer.add_special_tokens({'bos_token': '<s>'})
     if "</s>" not in tokenizer.all_special_tokens:
         tokenizer.add_special_tokens({'eos_token': '</s>'})
-    
-    required_tokens = ["<pad>", "<cls>", "<sep>", "<mask>", "<unk>", "<s>", "</s>"]
 
     print("Checking tokenizer special token IDs:")
+    required_tokens = ["<pad>", "<cls>", "<sep>", "<mask>", "<unk>", "<s>", "</s>"]
     for token in required_tokens:
         token_id = tokenizer.convert_tokens_to_ids(token)
         if token_id is None:
-            print(f"Missing token: {token} (This might indicate an issue with your tokenizer file or logic)")
+            print(f"Missing token: {token}")
         else:
             print(f"{token} ID: {token_id}")
-    print('\n')
     return tokenizer
 
 
 def tokenize_dataset(dataset, tokenizer, max_len=512):
+    print(f"Starting dataset tokenization with max_len={max_len}...")
     def tokenize_fn(examples):
-        # The 'InstaDeepAI/multi_species_genomes' dataset has a 'sequence' column.
         return tokenizer(
-            examples["sequence"],
+            examples["text"],
             truncation=True,
             padding="max_length",
-            max_length=max_len,
-            return_special_tokens_mask=True
+            max_length=max_len
         )
 
-    print("Starting dataset tokenization...")
     tokenized = dataset.map(
         tokenize_fn,
         batched=True,
         batch_size=1000,
-        num_proc=max(1, os.cpu_count() // 2),
-        remove_columns=[col for col in dataset.column_names if col not in ["input_ids", "attention_mask", "token_type_ids"]]
+        num_proc=max(1, os.cpu_count() // 2), # Use half available CPU cores for mapping
+        remove_columns=[col for col in dataset.column_names if col != "text"]
     )
-    if "text" in tokenized.column_names:
-        tokenized = tokenized.remove_columns("text")
-
     print("Tokenization complete.")
     print(f"Tokenized dataset features: {tokenized.column_names}")
-    print('\n')
     return tokenized
 
 
-# --- compute_metrics function with wandb logging commented out ---
 def compute_metrics(eval_preds: EvalPrediction):
     predictions, labels = eval_preds.predictions, eval_preds.label_ids
     if isinstance(predictions, tuple):
@@ -125,50 +100,53 @@ def compute_metrics(eval_preds: EvalPrediction):
     logits = torch.tensor(predictions)
     labels = torch.tensor(labels)
 
-    loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-100)
-    loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
+    # Shift for causal language modeling loss calculation (common in BERT pre-training for next token prediction)
+    # The original ModernBert pre-training might only do MLM, but if it's also doing NSP or next token, this is relevant.
+    # For a pure MLM objective, you might not shift, and compute loss directly on original logits/labels
+    # where -100 indicates masked tokens. Assuming your original intent for this part is correct for your task.
+    shift_logits = logits[..., :-1, :].contiguous()
+    shift_labels = labels[..., 1:].contiguous()
+
+    loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-100) # -100 is typically used for tokens not to be predicted/ignored
+    loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
     perplexity = torch.exp(loss).item() if loss.item() < 100 else float("inf")
 
-    # wandb.log({
-    #     "eval_loss": loss.item(),
-    #     "eval_perplexity": perplexity
-    # })
+    # Log to Weights & Biases
+    wandb.log({
+        "eval_loss": loss.item(),
+        "eval_perplexity": perplexity
+    })
     
-    print(f"[Eval] Loss: {loss.item():.4f}, Perplexity: {perplexity:.4f}")
-    print('\n')
+    print(f"Evaluation: Loss={loss.item():.4f}, Perplexity={perplexity:.4f}")
 
     return {"eval_loss": loss.item(), "perplexity": perplexity}
 
 
 def main():
     # Configuration
-    dataset_name = "InstaDeepAI/multi_species_genomes"
-    dataset_config = "6kbp"
+    csv_path = "/opt/home/e128037/Genome_multi/multi_species_subset_analysis.csv"
     tokenizer_path = "/opt/home/e128037/Genome_multi/4k_unigram_tokenizer.json"
-    output_dir = "./modernbert_model_checkpoints"
-    final_model_save_path = "/opt/home/e128037/Genome_multi/modernbert_final_model"
+    output_dir = "./model_files_01"
+    save_model_path = "/opt/home/e128037/Genome_multi/model_files_01"
     
     # Login to Weights & Biases
-    # wandb.login(key="e7e01f84083cf5898f0c4607d529b71cb7c89f73")
-    # print("Logged into Weights & Biases.")
-    print('\n')
+    wandb_api_key = os.environ.get("WANDB_API_KEY", "e7e01f84083cf5898f0c4607d529b71cb7c89f73")
+    wandb.login(key=wandb_api_key)
+    print("Logged into Weights & Biases.")
 
-    # Load data from Hugging Face Hub
-    dataset = load_data(dataset_name, dataset_config=dataset_config, dataset_split="train")
-    
-    # Load tokenizer
+    # Load data from the specified CSV file
+    # By default, load_data will now load all samples from the CSV.
+    # If you want to limit it (e.g., to the first 5000), use: dataset = load_data(csv_path, max_samples=5000)
+    dataset = load_data(csv_path) 
     tokenizer = load_tokenizer(tokenizer_path)
-
-    # Tokenize the dataset
-    tokenized_dataset = tokenize_dataset(dataset, tokenizer, max_len=512)
+    tokenized_dataset = tokenize_dataset(dataset, tokenizer)
 
     # Train/Test Split
-    print("Splitting dataset into train and test sets...")
-    split = tokenized_dataset.train_test_split(test_size=0.01, seed=42)
+    # This splits the data loaded from your CSV into a training set and a 10% test set.
+    split = tokenized_dataset.train_test_split(test_size=0.1, seed=42)
     train_dataset = split["train"]
-    eval_dataset = split["test"]
-    print(f"Train size: {len(train_dataset)}, Eval size: {len(eval_dataset)}")
-    print('\n')
+    eval_dataset = split["test"] # This is the subset of your CSV used for evaluation
+    print(f"Train size: {len(train_dataset)}, Test (evaluation) size: {len(eval_dataset)}")
 
     # Data Collator
     data_collator = DataCollatorForLanguageModeling(
@@ -179,78 +157,80 @@ def main():
 
     # Model Config and Initialization
     config = ModernBertConfig(
-        vocab_size=len(tokenizer),
+        vocab_size=tokenizer.vocab_size,
         pad_token_id=tokenizer.pad_token_id,
         cls_token_id=tokenizer.cls_token_id,
         sep_token_id=tokenizer.sep_token_id,
         mask_token_id=tokenizer.mask_token_id,
+        global_rope_theta=10000,
+        # Ensure BOS/EOS token IDs are set if you're using them in your tokenizer and data collation
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
-        global_rope_theta=10000,
     )
 
     model = ModernBertForMaskedLM(config=config)
-    print("Model initialized with ModernBertConfig.")
+    # Ensure model's embedding size matches tokenizer's vocab size if new tokens were added
     if len(tokenizer) > model.config.vocab_size:
         model.resize_token_embeddings(len(tokenizer))
-        print(f"Resized model embeddings to {len(tokenizer)} for new tokens.")
-    print(f"Model number of parameters: {model.num_parameters()}")
-    print('\n')
+        print(f"Resized model embeddings to {len(tokenizer)} for tokenizer's full vocabulary.")
+    print(f"Model initialized with {model.num_parameters()} parameters.")
 
     # Training Arguments
     training_args = TrainingArguments(
         output_dir=output_dir,
         overwrite_output_dir=True,
         num_train_epochs=5,
-        per_device_train_batch_size=128,
+        per_device_train_batch_size=128,          
         per_device_eval_batch_size=128,
         gradient_accumulation_steps=4,
-        learning_rate=5e-4,
+        learning_rate=5e-4,                      
         adam_beta1=0.9,
         adam_beta2=0.98,
         adam_epsilon=1e-6,
         weight_decay=1e-5,
-        lr_scheduler_type="linear",
+        lr_scheduler_type="linear",              
         warmup_ratio=0.06,
         save_steps=500,
         save_total_limit=2,
         logging_steps=100,
         eval_strategy="steps",
-        eval_steps=500,
+        eval_steps=10, # Evaluate every 10 steps
         fp16=True,
-        # report_to=["wandb"], # Commented out report_to
-        run_name="modernbert-pretrain-full-genome"
+        report_to=["wandb"],
+        run_name="modernbert-pretrain"
     )
 
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=split["train"].shuffle(seed=42),
-        eval_dataset=split["test"].shuffle(seed=42),
+        train_dataset=train_dataset.shuffle(seed=42),
+        eval_dataset=eval_dataset.shuffle(seed=42),
         data_collator=data_collator,
         tokenizer=tokenizer,
         compute_metrics=compute_metrics
     )
 
     print("Starting training...")
-    print('\n')
     trainer.train()
 
-    os.makedirs(final_model_save_path, exist_ok=True)
-    trainer.save_model(final_model_save_path)
-    tokenizer.save_pretrained(final_model_save_path)
-    print(f"Model and tokenizer saved to: {final_model_save_path}")
-    print('\n')
+    # Save final model and tokenizer
+    os.makedirs(save_model_path, exist_ok=True)
+    trainer.save_model(save_model_path)
+    tokenizer.save_pretrained(save_model_path)
+    print(f"Model and tokenizer saved to: {save_model_path}")
 
+    # Final Evaluation
     print("\nRunning final evaluation on test set...")
     final_metrics = trainer.evaluate(eval_dataset=eval_dataset)
     print("Final Evaluation Results:")
     print(final_metrics)
-    # wandb.log(final_metrics) # Commented out wandb logging
-    print(f"Final Evaluation Loss: {final_metrics.get('eval_loss', 0):.4f}, "
+    # Note: eval_perplexity might not be directly in final_metrics from trainer.evaluate
+    # if compute_metrics only returns eval_loss. Check your compute_metrics function
+    # for exact key names being returned. Assuming 'perplexity' is what you want.
+    print(f"Final Evaluation Loss: {final_metrics.get('eval_loss', float('nan')):.4f}, "
           f"Perplexity: {final_metrics.get('perplexity', float('nan')):.4f}")
 
-    # wandb.finish() # Commented out wandb finish
+    wandb.finish() # End WandB run
 
 
 if __name__ == "__main__":
