@@ -15,9 +15,12 @@ model_directory = "./path/to/your/modernbert-dna-model/"
 print("Step 1: Loading the fine-tuning dataset...")
 
 # Promoter/Non-Promoter dataset
-dataset = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks", "promoter_all")
-# dataset = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks", "splice_sites_donor")
-# dataset = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks", "H3K4me3")
+dataset = load_dataset(
+    "InstaDeepAI/nucleotide_transformer_downstream_tasks", 
+    split="promoter_all"
+)
+# dataset = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks", split="splice_sites_donor")
+# dataset = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks", split="H3K4me3")
 
 print(f"Dataset loaded successfully with splits: {dataset.keys()}")
 print(dataset['train'])
