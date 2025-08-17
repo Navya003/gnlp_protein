@@ -17,7 +17,7 @@ print("Step 1: Loading the fine-tuning dataset...")
 # Promoter/Non-Promoter dataset
 dataset = load_dataset(
     "InstaDeepAI/nucleotide_transformer_downstream_tasks", 
-    split="promoter_all"
+    split="promoter_all", streaming=True
 )
 # dataset = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks", split="splice_sites_donor")
 # dataset = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks", split="H3K4me3")
