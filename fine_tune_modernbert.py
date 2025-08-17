@@ -2,102 +2,119 @@
 
 # --- Required imports
 from transformers import PreTrainedTokenizerFast, AutoModelForSequenceClassification, TrainingArguments, Trainer
-from datasets import load_dataset
+from datasets import load_dataset, DatasetDict
 import numpy as np
 import evaluate
+import os
 
 # --- 1. Define model and tokenizer paths ---
-# Set the path to the directory that contains all the model and tokenizer files.
-model_directory = "./path/to/your/modernbert-dna-model/"
+model_directory = "/projects/lz25/navyat/nt/model_files_05"
 
-# --- 2. Load the dataset for fine-tuning
+# --- 2. Define the list of tasks to fine-tune on ---
+# Choose any 5 tasks from the 18 available
+tasks_to_finetune = [
+    "promoter_tata",
+    "H3",
+    "H4",
+    "enhancers",
+    "enhancer_types"
+]
 
-print("Step 1: Loading the fine-tuning dataset...")
+# --- 3. Load the full dataset (default configuration)
+print("Step 1: Loading the full 'nucleotide_transformer_downstream_tasks' dataset...")
+try:
+    full_dataset = load_dataset(
+        "InstaDeepAI/nucleotide_transformer_downstream_tasks"
+    )
+    print("Full dataset loaded successfully.")
+except Exception as e:
+    print(f"Error loading the dataset: {e}")
+    exit()
 
-# Promoter/Non-Promoter dataset
-dataset = load_dataset(
-    "InstaDeepAI/nucleotide_transformer_downstream_tasks", 
-    split="promoter_all", streaming=True
-)
-# dataset = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks", split="splice_sites_donor")
-# dataset = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks", split="H3K4me3")
-
-print(f"Dataset loaded successfully with splits: {dataset.keys()}")
-print(dataset['train'])
-
-# --- 2. Load the pre-trained tokenizer and model ---
+# --- 4. Load the pre-trained tokenizer and model ---
 print("\nStep 2: Loading pre-trained tokenizer and model...")
-# The from_pretrained method will find all the necessary files within this directory.
 tokenizer = PreTrainedTokenizerFast.from_pretrained(model_directory)
-
-# Ensure the model is loaded with the correct number of labels for your task.
-num_labels = dataset["train"].features["labels"].num_classes
-model = AutoModelForSequenceClassification.from_pretrained(
-    model_directory, 
-    num_labels=num_labels
-)
-
-# --- 4. Define data preprocessing function
-# This function tokenizes the sequences and prepares them for the model.
-def tokenize_function(examples):
-    # 'sequence' is the column name for the DNA sequences
-    return tokenizer(examples['sequence'], padding="max_length", truncation=True)
-
-print("\nStep 3: Tokenizing the dataset...")
-tokenized_datasets = dataset.map(tokenize_function, batched=True)
-
-# Remove the original columns that are not needed for training
-tokenized_datasets = tokenized_datasets.remove_columns(["sequence", "id"])
-# Rename the 'labels' column to 'labels' as required by the Trainer
-tokenized_datasets = tokenized_datasets.rename_column("labels", "labels")
-
-# Set the format for PyTorch
-tokenized_datasets.set_format("torch")
+# We load the model once, and it will be fine-tuned for each task.
+# The number of labels will be updated for each task.
+base_model = AutoModelForSequenceClassification.from_pretrained(model_directory)
 
 # --- 5. Define evaluation metrics
-# We will use accuracy as a simple metric.
 accuracy = evaluate.load("accuracy")
-
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
     return accuracy.compute(predictions=predictions, references=labels)
 
-# --- 6. Set up TrainingArguments
-print("\nStep 4: Setting up training arguments...")
-training_args = TrainingArguments(
-    output_dir="./results",                   # Directory where the model and logs will be saved
-    num_train_epochs=3,                       # Number of full passes over the training data
-    per_device_train_batch_size=8,            # Batch size per GPU/device for training
-    per_device_eval_batch_size=8,             # Batch size per GPU/device for evaluation
-    warmup_steps=500,                         # Number of warmup steps for learning rate scheduler
-    weight_decay=0.01,                        # Strength of weight decay
-    logging_dir='./logs',                     # Directory for storing logs
-    logging_steps=100,                        # Log every 100 steps
-    eval_strategy="epoch",                    # Run evaluation at the end of each epoch
-    save_strategy="epoch",                    # Save model checkpoint at the end of each epoch
-    load_best_model_at_end=True,              # Load the best model from a saved checkpoint
-    metric_for_best_model="accuracy",         # Metric to monitor for the best model
-)
+# --- 6. Iterate through each task and run the fine-tuning process ---
+for task_name in tasks_to_finetune:
+    print(f"\n=======================================================")
+    print(f"Step 3: Fine-tuning for task: {task_name}")
+    print(f"=======================================================")
 
-# --- 7. Instantiate the Trainer
-print("\nStep 5: Initializing the Trainer...")
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=tokenized_datasets["train"],
-    eval_dataset=tokenized_datasets["test"],
-    compute_metrics=compute_metrics,
-)
+    # Filter the dataset for the current task
+    # A single dataset contains all the tasks, differentiated by the 'task' column.
+    filtered_dataset = full_dataset.filter(lambda example: example['task'] == task_name)
+    
+    # We need to drop the 'task' column before training
+    filtered_dataset = filtered_dataset.remove_columns(["task"])
 
-# --- 8. Start fine-tuning
-print("\nStep 6: Starting the fine-tuning process...")
-trainer.train()
-print("\nFine-tuning complete!")
+    # Update the number of labels for the current task
+    num_labels = filtered_dataset["train"].features["labels"].num_classes
+    
+    # Reload the model with the correct number of labels for the current task.
+    # We use a fresh model to ensure each fine-tuning process is independent.
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_directory, 
+        num_labels=num_labels
+    )
 
-# --- 9. Evaluate the fine-tuned model
-print("\nStep 7: Evaluating the model on the test set...")
-evaluation_results = trainer.evaluate()
-print("Evaluation results:", evaluation_results)
+    # Preprocess the data for the current task
+    def tokenize_function(examples):
+        return tokenizer(examples['sequence'], padding="max_length", truncation=True)
 
-# --- End of script ---
+    print("  Tokenizing the dataset...")
+    tokenized_datasets = filtered_dataset.map(tokenize_function, batched=True)
+    tokenized_datasets = tokenized_datasets.remove_columns(["sequence", "id"])
+    tokenized_datasets = tokenized_datasets.rename_column("labels", "labels")
+    tokenized_datasets.set_format("torch")
+
+    # Set up TrainingArguments for the current task
+    print("  Setting up training arguments...")
+    output_dir = f"./results/{task_name}"
+    training_args = TrainingArguments(
+        output_dir=output_dir,
+        num_train_epochs=3,
+        per_device_train_batch_size=8,
+        per_device_eval_batch_size=8,
+        warmup_steps=500,
+        weight_decay=0.01,
+        logging_dir=f'./logs/{task_name}',
+        logging_steps=100,
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        load_best_model_at_end=True,
+        metric_for_best_model="accuracy",
+    )
+
+    # Instantiate and run the Trainer for the current task
+    print("  Initializing and starting the Trainer...")
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=tokenized_datasets["train"],
+        eval_dataset=tokenized_datasets["test"],
+        compute_metrics=compute_metrics,
+    )
+
+    trainer.train()
+    print("  Fine-tuning complete!")
+
+    # Evaluate the fine-tuned model
+    print("  Evaluating the model on the test set...")
+    evaluation_results = trainer.evaluate()
+    print("  Evaluation results:", evaluation_results)
+    
+    # You may also want to save the final fine-tuned model for this task
+    trainer.save_model(f"./{task_name}_final_model")
+
+print("\nAll tasks completed!")
