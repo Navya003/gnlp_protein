@@ -19,8 +19,8 @@ os.environ["WANDB_DISABLED"] = "true"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 # === Configuration ===
-MODEL_DIRECTORY = "/projects/lz25/navyat/nt/model_files_05/checkpoint-20311/"
-TASK_NAME = "promoter_all" # You should tune for one task at a time for simplicity
+MODEL_DIRECTORY = "/projects/lz25/navyat/nt/model_files_05"
+TASK_NAME = "promoter_all" 
 NUM_TRIALS = 10 
 TIMEOUT = 3600 # 1 hour timeout
 
