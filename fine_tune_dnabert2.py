@@ -8,7 +8,7 @@ from transformers import (
     Trainer,
     AutoModelForSequenceClassification,
     AutoConfig,
-    AutoTokenizer, # Use AutoTokenizer for DNABERT-2
+    AutoTokenizer,
 )
 from datasets import load_dataset
 from sklearn.metrics import f1_score, matthews_corrcoef, precision_score, recall_score
@@ -21,7 +21,7 @@ os.environ["HF_HOME"] = "/projects/lz25/navyat/"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 # === Configuration ===
-MODEL_NAME = "quietflamingo/dnabert2-no-flashattention" # Updated model identifier
+MODEL_NAME = "quietflamingo/dnabert2-no-flashattention"
 TASK_NAME = "promoter_all" 
 NUM_TRIALS = 10 
 TIMEOUT = 3600 # 1 hour timeout
@@ -41,15 +41,16 @@ if not tokenizer:
     
 # Function to tokenize the sequences
 def tokenize_function(examples):
-    # Ensure there's a valid 'text' key to tokenize
-    if 'text' not in examples or not isinstance(examples['text'], list):
-        raise ValueError("Dataset does not contain a 'text' column or it's not a list.")
+    # CORRECTED: Use 'sequence' column instead of 'text'
+    if 'sequence' not in examples or not isinstance(examples['sequence'], list):
+        raise ValueError("Dataset does not contain a 'sequence' column or it's not a list.")
     # Pad sequences to the maximum length of the batch to speed up processing
-    return tokenizer(examples['text'], padding="max_length", truncation=True, max_length=512)
+    return tokenizer(examples['sequence'], padding="max_length", truncation=True, max_length=512)
 
 print("Step 2: Tokenizing the dataset...")
 # Apply tokenization to the entire dataset
-tokenized_dataset = filtered_dataset.map(tokenize_function, batched=True, num_proc=10, remove_columns=["text"])
+# CORRECTED: Remove 'sequence' column after tokenization
+tokenized_dataset = filtered_dataset.map(tokenize_function, batched=True, num_proc=10, remove_columns=["sequence"])
 tokenized_dataset.set_format("torch")
 
 # Split the dataset into train and test
