@@ -62,16 +62,17 @@ print(f"Number of labels detected: {num_labels}")
 
 # --- 2. Define compute_metrics for evaluation ---
 def compute_metrics(eval_pred):
-    predictions, labels = eval_pred
-    # Check if predictions are logits (for classification)
-    if predictions.ndim > 1:
-        predictions = np.argmax(predictions, axis=1)
-        
+    # Access the prediction logits and true labels directly from the named tuple
+    predictions, labels = eval_pred.predictions, eval_pred.label_ids
+    if isinstance(predictions, tuple):
+        predictions = predictions[0]
+    # Convert logits to class predictions by taking the argmax
+    predictions = np.argmax(predictions, axis=1)
+    # Compute and return the metrics
     f1 = f1_score(labels, predictions, average='macro')
     mcc = matthews_corrcoef(labels, predictions)
     precision = precision_score(labels, predictions, average='macro', zero_division=0)
     recall = recall_score(labels, predictions, average='macro', zero_division=0)
-    
     return {
         "f1": f1,
         "mcc": mcc,
