@@ -8,7 +8,7 @@ from transformers import (
     Trainer,
     AutoModelForSequenceClassification,
     AutoConfig,
-    AutoTokenizer, 
+    AutoTokenizer,
 )
 from datasets import load_dataset
 from sklearn.metrics import f1_score, matthews_corrcoef, precision_score, recall_score
@@ -21,9 +21,8 @@ os.environ["HF_HOME"] = "/projects/lz25/navyat/"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 # === Configuration ===
-# Use the model identifier for GENA-LM
-MODEL_NAME = "AIRI-Institute/gena-lm-bert-base-t2t-dna" 
-TASK_NAME = "splice_sites_acceptor" # Example task, update as needed
+MODEL_NAME = "AIRI-Institute/gena-lm-bert-base-t2t-dna"
+TASK_NAME = "promoter_all" 
 NUM_TRIALS = 10 
 TIMEOUT = 3600 # 1 hour timeout
 
@@ -35,90 +34,78 @@ full_dataset = load_dataset("InstaDeepAI/nucleotide_transformer_downstream_tasks
 filtered_dataset = full_dataset.filter(lambda example: example['task'] == TASK_NAME)
 filtered_dataset = filtered_dataset.remove_columns(["task"])
 
-# Add a check to prevent the ValueError
-if len(filtered_dataset['train']) == 0:
-    print(f"\nError: The dataset for TASK_NAME '{TASK_NAME}' is empty.")
-    print("Please check the task name and try again.")
-    exit()
-
-# Split the data
-train_dataset = filtered_dataset["train"].shuffle(seed=42)
-eval_dataset = filtered_dataset["validation"].shuffle(seed=42)
-
-# Get the number of labels for the task
-num_labels = max(train_dataset["labels"]) + 1
-
-# Load GENA-LM tokenizer with trust_remote_code=True
-print("Step 2: Loading tokenizer...")
+# Load DNABERT-2 tokenizer
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-
-# Tokenization function
+if not tokenizer:
+    raise ValueError("Tokenizer failed to load. Please check the model name and internet connection.")
+    
+# Function to tokenize the sequences
 def tokenize_function(examples):
-    # Ensure correct padding and truncation
-    return tokenizer(
-        examples["sequence"], 
-        padding="max_length", 
-        truncation=True, 
-        max_length=600 # Adjust max_length according to your task's sequence length
-    )
+    # CORRECTED: Use 'sequence' column instead of 'text'
+    if 'sequence' not in examples or not isinstance(examples['sequence'], list):
+        raise ValueError("Dataset does not contain a 'sequence' column or it's not a list.")
+    # Pad sequences to the maximum length of the batch to speed up processing
+    return tokenizer(examples['sequence'], padding="max_length", truncation=True, max_length=512)
 
-# Apply tokenization
-print("Step 3: Tokenizing dataset...")
-tokenized_datasets = filtered_dataset.map(tokenize_function, batched=True)
+print("Step 2: Tokenizing the dataset...")
+# Apply tokenization to the entire dataset
+# CORRECTED: Remove 'sequence' column after tokenization
+tokenized_dataset = filtered_dataset.map(tokenize_function, batched=True, num_proc=10, remove_columns=["sequence"])
+tokenized_dataset.set_format("torch")
 
-# Set the format for PyTorch and remove unwanted columns
-tokenized_datasets.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
-tokenized_train_dataset = tokenized_datasets["train"]
-tokenized_eval_dataset = tokenized_datasets["validation"]
+# Split the dataset into train and test
+train_dataset = tokenized_dataset["train"]
+eval_dataset = tokenized_dataset["test"]
+# Set num_labels dynamically based on the dataset
+num_labels = len(np.unique(train_dataset['label']))
+print(f"Number of labels detected: {num_labels}")
 
-# === 2. Hyperparameter Search with Optuna ===
+# --- 2. Define compute_metrics for evaluation ---
 def compute_metrics(eval_pred):
-    predictions, labels = eval_pred
-    # The predictions are logits, so we take the argmax
+    # Access the prediction logits and true labels directly from the named tuple
+    predictions, labels = eval_pred.predictions, eval_pred.label_ids
+    if isinstance(predictions, tuple):
+        predictions = predictions[0]
+    # Convert logits to class predictions by taking the argmax
     predictions = np.argmax(predictions, axis=1)
-    
-    f1 = f1_score(labels, predictions, average="weighted")
+    # Compute and return the metrics
+    f1 = f1_score(labels, predictions, average='macro')
     mcc = matthews_corrcoef(labels, predictions)
-    precision = precision_score(labels, predictions, average="weighted", zero_division=0)
-    recall = recall_score(labels, predictions, average="weighted", zero_division=0)
-    
+    precision = precision_score(labels, predictions, average='macro', zero_division=0)
+    recall = recall_score(labels, predictions, average='macro', zero_division=0)
     return {
         "f1": f1,
-        "matthews_corrcoef": mcc,
+        "mcc": mcc,
         "precision": precision,
         "recall": recall
     }
 
-def model_init(trial):
-    config = AutoConfig.from_pretrained(
-        MODEL_NAME, 
-        num_labels=num_labels,
-        trust_remote_code=True
-    )
-    # Load GENA-LM model with trust_remote_code=True
+# --- 3. Define the objective function for Optuna ---
+def objective(trial):
+    # Suggest hyperparameters
+    learning_rate = trial.suggest_float("learning_rate", 5e-6, 5e-5, log=True)
+    per_device_train_batch_size = trial.suggest_categorical("per_device_train_batch_size", [4, 8, 16, 32])
+    num_train_epochs = trial.suggest_int("num_train_epochs", 1, 5)
+
+    # Load a fresh model for each trial
+    # 1. Load the model's configuration
+    config = AutoConfig.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    config.num_labels = num_labels
+    # 2. Explicitly set the attention implementation to 'eager'
+    config._attn_implementation = "eager"
+    
     model = AutoModelForSequenceClassification.from_pretrained(
         MODEL_NAME, 
         config=config,
         trust_remote_code=True
     )
-    return model
 
-def objective(trial):
-    # Suggest hyperparameters to Optuna
-    learning_rate = trial.suggest_float("learning_rate", 1e-5, 5e-5, log=True)
-    per_device_train_batch_size = trial.suggest_categorical(
-        "per_device_train_batch_size", [8, 16]
-    )
-    per_device_eval_batch_size = trial.suggest_categorical(
-        "per_device_eval_batch_size", [8, 16]
-    )
-    num_train_epochs = trial.suggest_int("num_train_epochs", 1, 3)
-
+    # Define training arguments
     training_args = TrainingArguments(
-        output_dir="./results",
+        output_dir=f"./results/{TASK_NAME}/trial_{trial.number}",
         num_train_epochs=num_train_epochs,
         per_device_train_batch_size=per_device_train_batch_size,
-        per_device_eval_batch_size=per_device_eval_batch_size,
+        per_device_eval_batch_size=per_device_train_batch_size * 2,
         learning_rate=learning_rate,
         warmup_steps=500,
         weight_decay=0.01,
@@ -131,45 +118,48 @@ def objective(trial):
         report_to="none"
     )
 
+    # Initialize Trainer
     trainer = Trainer(
-        model_init=model_init,
+        model=model,
         args=training_args,
-        train_dataset=tokenized_train_dataset,
-        eval_dataset=tokenized_eval_dataset,
-        compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        compute_metrics=compute_metrics
     )
 
+    # Train and evaluate
     trainer.train()
-    
-    # Evaluate on the best model from the current trial
     eval_results = trainer.evaluate()
+
+    # Optuna needs to maximize a value, so we'll use F1-score
     return eval_results["eval_f1"]
 
-# Run Optuna study
-print("Step 4: Starting Optuna hyperparameter search...")
-study = optuna.create_study(direction="maximize")
-study.optimize(objective, n_trials=NUM_TRIALS, timeout=TIMEOUT)
-
-print("\n=======================================================")
-print("Best trial:")
-best_trial = study.best_trial
-print(f"  Value (F1 Score): {best_trial.value}")
-print("  Params: ")
-for key, value in best_trial.params.items():
-    print(f"    {key}: {value}")
-print("=======================================================\n")
-
-# === 3. Final Training with Best Hyperparameters ===
-if best_trial:
-    best_params = best_trial.params
-    print("Step 5: Training final model with best hyperparameters...")
+# --- 4. Run the Optuna study ---
+if __name__ == "__main__":
+    print("Step 3: Running Optuna hyperparameter optimization...")
+    study_name = f"{TASK_NAME}_optimization"
+    storage_name = f"sqlite:///{study_name}.db"
     
-    config = AutoConfig.from_pretrained(
-        MODEL_NAME, 
-        num_labels=num_labels,
-        trust_remote_code=True
-    )
+    study = optuna.create_study(direction="maximize", study_name=study_name, storage=storage_name, load_if_exists=True)
+    study.optimize(objective, n_trials=NUM_TRIALS, timeout=TIMEOUT)
+
+    # --- 5. Print best hyperparameters and train the final model ---
+    print("\n=======================================================")
+    print("Optimization finished.")
+    print("Best hyperparameters found: ", study.best_params)
+    print("Best F1 score: ", study.best_value)
+    print("=======================================================")
+
+    best_params = study.best_params
+
+    # Train the final model with the best hyperparameters
+    print("\nStep 4: Training final model with best hyperparameters...")
+    
+    # Load the final model with the best configuration from the study
+    config = AutoConfig.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    config.num_labels = num_labels
+    config._attn_implementation = "eager"
+
     final_model = AutoModelForSequenceClassification.from_pretrained(
         MODEL_NAME, 
         config=config,
@@ -179,7 +169,7 @@ if best_trial:
         output_dir=f"./final_model/{TASK_NAME}",
         num_train_epochs=best_params["num_train_epochs"],
         per_device_train_batch_size=best_params["per_device_train_batch_size"],
-        per_device_eval_batch_size=best_params["per_device_eval_batch_size"],
+        per_device_eval_batch_size=best_params["per_device_train_batch_size"] * 2,
         learning_rate=best_params["learning_rate"],
         warmup_steps=500,
         weight_decay=0.01,
@@ -194,8 +184,8 @@ if best_trial:
     final_trainer = Trainer(
         model=final_model,
         args=final_training_args,
-        train_dataset=tokenized_train_dataset,
-        eval_dataset=tokenized_eval_dataset,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         compute_metrics=compute_metrics
     )
     
