@@ -36,12 +36,13 @@ filtered_dataset = full_dataset.filter(lambda example: example['task'] == TASK_N
 dataset = filtered_dataset.remove_columns(["task"])
 
 train_dataset = dataset["train"]
-eval_dataset = dataset["test"] # Corrected from 'validation' to 'test'
+eval_dataset = dataset["test"]
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
 
 def tokenize_function(examples):
-    return tokenizer(examples['text'], padding='max_length', truncation=True)
+    # CORRECTED: Use 'sequence' instead of 'text'
+    return tokenizer(examples['sequence'], padding='max_length', truncation=True)
 
 tokenized_train_dataset = train_dataset.map(tokenize_function, batched=True)
 tokenized_eval_dataset = eval_dataset.map(tokenize_function, batched=True)
@@ -49,8 +50,10 @@ tokenized_eval_dataset = eval_dataset.map(tokenize_function, batched=True)
 tokenized_train_dataset = tokenized_train_dataset.rename_column("label", "labels")
 tokenized_eval_dataset = tokenized_eval_dataset.rename_column("label", "labels")
 
-tokenized_train_dataset = tokenized_train_dataset.remove_columns(["text"])
-tokenized_eval_dataset = tokenized_eval_dataset.remove_columns(["text"])
+# Remove the original 'sequence' and 'label' columns
+tokenized_train_dataset = tokenized_train_dataset.remove_columns(["sequence"])
+tokenized_eval_dataset = tokenized_eval_dataset.remove_columns(["sequence"])
+
 
 # === 2. Define metrics ===
 print("Step 2: Defining metrics...")
