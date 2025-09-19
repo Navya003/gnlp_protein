@@ -41,7 +41,8 @@ eval_dataset = dataset["test"]
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
 
 def tokenize_function(examples):
-    return tokenizer(examples['sequence'], padding='max_length', truncation=True)
+    # CORRECTED: Added explicit max_length
+    return tokenizer(examples['sequence'], padding='max_length', truncation=True, max_length=512)
 
 tokenized_train_dataset = train_dataset.map(tokenize_function, batched=True)
 tokenized_eval_dataset = eval_dataset.map(tokenize_function, batched=True)
@@ -96,7 +97,7 @@ def objective(trial):
         weight_decay=0.01,
         logging_dir="./logs",
         logging_steps=100,
-        eval_strategy="epoch", # CORRECTED: Changed from 'evaluation_strategy'
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="f1",
@@ -140,7 +141,7 @@ final_training_args = TrainingArguments(
     weight_decay=0.01,
     logging_dir="./logs",
     logging_steps=100,
-    eval_strategy="epoch", # CORRECTED: Changed from 'evaluation_strategy'
+    eval_strategy="epoch",
     save_strategy="epoch",
     load_best_model_at_end=True,
     metric_for_best_model="f1",
