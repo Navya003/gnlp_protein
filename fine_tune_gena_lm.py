@@ -41,7 +41,6 @@ eval_dataset = dataset["test"]
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
 
 def tokenize_function(examples):
-    # CORRECTED: Use 'sequence' instead of 'text'
     return tokenizer(examples['sequence'], padding='max_length', truncation=True)
 
 tokenized_train_dataset = train_dataset.map(tokenize_function, batched=True)
@@ -50,10 +49,8 @@ tokenized_eval_dataset = eval_dataset.map(tokenize_function, batched=True)
 tokenized_train_dataset = tokenized_train_dataset.rename_column("label", "labels")
 tokenized_eval_dataset = tokenized_eval_dataset.rename_column("label", "labels")
 
-# Remove the original 'sequence' and 'label' columns
 tokenized_train_dataset = tokenized_train_dataset.remove_columns(["sequence"])
 tokenized_eval_dataset = tokenized_eval_dataset.remove_columns(["sequence"])
-
 
 # === 2. Define metrics ===
 print("Step 2: Defining metrics...")
@@ -99,7 +96,7 @@ def objective(trial):
         weight_decay=0.01,
         logging_dir="./logs",
         logging_steps=100,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch", # CORRECTED: Changed from 'evaluation_strategy'
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="f1",
@@ -118,7 +115,6 @@ def objective(trial):
 
     eval_result = trainer.evaluate()
     
-    # Return the metric to be optimized (F1 score in this case)
     return eval_result["eval_f1"]
 
 study = optuna.create_study(direction="maximize")
@@ -144,7 +140,7 @@ final_training_args = TrainingArguments(
     weight_decay=0.01,
     logging_dir="./logs",
     logging_steps=100,
-    evaluation_strategy="epoch",
+    eval_strategy="epoch", # CORRECTED: Changed from 'evaluation_strategy'
     save_strategy="epoch",
     load_best_model_at_end=True,
     metric_for_best_model="f1",
