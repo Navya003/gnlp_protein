@@ -3,6 +3,10 @@
 # === OPTUNA HYPERPARAMETER TUNING SCRIPT ===
 import optuna
 import evaluate
+import numpy as np
+import os
+import time 
+
 from transformers import (
     TrainingArguments,
     Trainer,
@@ -11,8 +15,7 @@ from transformers import (
 )
 from datasets import load_dataset
 from sklearn.metrics import f1_score, matthews_corrcoef, precision_score, recall_score
-import numpy as np
-import os
+
 
 # Disable WandB and other loggers for a clean run
 os.environ["WANDB_DISABLED"] = "true"
@@ -46,7 +49,8 @@ tokenized_datasets = tokenized_datasets.rename_column("label", "labels")
 tokenized_datasets.set_format("torch")
 
 train_dataset = tokenized_datasets["train"]
-eval_dataset = tokenized_datasets["test"]
+# Using 'test' split as the validation set for the Trainer, as in your original code
+eval_dataset = tokenized_datasets["test"] 
 
 # Get number of labels
 num_labels = max(train_dataset["labels"]) + 1
@@ -54,7 +58,6 @@ print(f"  Number of labels for '{TASK_NAME}': {num_labels}")
 print("Data preprocessing complete.")
 
 # === 2. Metrics Function ===
-# The Trainer will call this function during evaluation
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
@@ -157,12 +160,20 @@ def run_hyperparameter_tuning_and_evaluate():
         compute_metrics=compute_metrics
     )
     
+    # --- TIME MEASUREMENT ADDED HERE ---
+    start_time = time.time()
     final_trainer.train()
+    end_time = time.time()
+    training_duration = end_time - start_time
+    # -----------------------------------
+    
     final_evaluation_results = final_trainer.evaluate()
     
     print("\n=======================================================")
     print(f"Final evaluation results for {TASK_NAME}:")
     print(final_evaluation_results)
+    # --- REPORT TRAINING DURATION ---
+    print(f"Final model training took: {training_duration:.2f} seconds.")
     print("=======================================================")
 
     # Save the final model
