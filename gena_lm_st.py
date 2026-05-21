@@ -1,11 +1,11 @@
-# filename: gena_lm_st.py
-
 import os
 import torch
 import numpy as np
 import evaluate
 import time
 import optuna
+import pandas as pd
+from scipy import stats
 from transformers import (
     TrainingArguments,
     Trainer,
@@ -16,16 +16,14 @@ from transformers import (
 from datasets import load_dataset, Dataset
 from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef, precision_score, recall_score, roc_auc_score
 from tqdm import tqdm
-import pandas as pd
-from scipy import stats
-from transformers import set_seed
 
 # === Configuration ===
 MODEL_NAME = "AIRI-Institute/gena-lm-bert-base-t2t-multi"
 TASK_NAME = "promoter_all"
 OUTPUT_DIR = "./final_model_gena_lm"
-NUM_TRIALS = 10 # Number of Optuna trials
-TIMEOUT = 3600 # 1 hour timeout for tuning
+NUM_TRIALS = 10  # Number of Optuna trials
+TIMEOUT = 3600   # 1 hour timeout for tuning
+SEEDS = [42, 123, 2024, 3407, 999]  # Seeds for multi-run evaluation
 
 # Disable WandB and other loggers for a clean run
 os.environ["WANDB_DISABLED"] = "true"
@@ -44,7 +42,6 @@ eval_dataset = dataset["test"]
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
 
 def tokenize_function(examples):
-    # CORRECTED: Added explicit max_length
     return tokenizer(examples['sequence'], padding='max_length', truncation=True, max_length=512)
 
 tokenized_train_dataset = train_dataset.map(tokenize_function, batched=True)
@@ -60,16 +57,22 @@ tokenized_eval_dataset = tokenized_eval_dataset.remove_columns(["sequence"])
 print("Step 2: Defining metrics...")
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
-    probabilities = torch.nn.functional.softmax(torch.tensor(logits), dim=-1)[:, 1]
     predictions = np.argmax(logits, axis=-1)
-    
+
+    # Compute softmax probabilities for AUC
+    probs = torch.softmax(torch.tensor(logits), dim=-1).numpy()
+    # Use probability of positive class (index 1) for binary AUC
+    try:
+        auc = roc_auc_score(labels, probs[:, 1])
+    except ValueError:
+        auc = float('nan')
+
     accuracy = accuracy_score(labels, predictions)
     f1 = f1_score(labels, predictions, average='binary')
     precision = precision_score(labels, predictions, average='binary')
     recall = recall_score(labels, predictions, average='binary')
     mcc = matthews_corrcoef(labels, predictions)
-    auc = roc_auc_score(labels, probabilities)
-    
+
     return {
         "accuracy": accuracy,
         "f1": f1,
@@ -79,20 +82,18 @@ def compute_metrics(eval_pred):
         "auc": auc,
     }
 
-# === 3. Hyperparameter Tuning with Optuna ===
+# === 3. Hyperparameter Tuning with Optuna (done once, seed-independent) ===
 print("Step 3: Starting hyperparameter tuning with Optuna...")
 
-def model_init(trial):
+def model_init(trial=None):
     num_labels = np.unique(tokenized_train_dataset['labels']).shape[0]
     return AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=num_labels, trust_remote_code=True)
 
 def objective(trial):
-    # Hyperparameter ranges to be tuned
     learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True)
     per_device_train_batch_size = trial.suggest_categorical("per_device_train_batch_size", [8, 16, 32])
     num_train_epochs = trial.suggest_categorical("num_train_epochs", [1, 2, 3])
 
-    # Trainer arguments
     training_args = TrainingArguments(
         output_dir=f"{OUTPUT_DIR}_tuning",
         per_device_train_batch_size=per_device_train_batch_size,
@@ -119,9 +120,7 @@ def objective(trial):
     )
 
     trainer.train()
-
     eval_result = trainer.evaluate()
-    
     return eval_result["eval_f1"]
 
 study = optuna.create_study(direction="maximize")
@@ -133,75 +132,105 @@ best_params = study.best_trial.params
 print(best_params)
 print("=======================================================")
 
-# === 4. Train the final model across multiple seeds ===
-print("\nStep 4: Training the final model across multiple seeds...")
-best_model_params = study.best_trial.params
-SEEDS = [42, 123, 2024, 3407, 999]
-results_list = []
+# === 4. Multi-seed training and evaluation with best hyperparameters ===
+print("\nStep 4: Training with multiple seeds using best hyperparameters...")
 
-for s in SEEDS:
-    print(f"\n--- Training with seed: {s} ---")
-    set_seed(s)
-    
+all_seed_results = []
+
+for seed in SEEDS:
+    print(f"\n--- Running with seed: {seed} ---")
+
+    seed_output_dir = f"./final_model/{TASK_NAME}/seed_{seed}"
+
     final_training_args = TrainingArguments(
-        output_dir=f"./final_model/{TASK_NAME}/seed_{s}",
-        num_train_epochs=best_model_params["num_train_epochs"],
-        per_device_train_batch_size=best_model_params["per_device_train_batch_size"],
-        per_device_eval_batch_size=best_model_params["per_device_train_batch_size"],
-        learning_rate=best_model_params["learning_rate"],
+        output_dir=seed_output_dir,
+        num_train_epochs=best_params["num_train_epochs"],
+        per_device_train_batch_size=best_params["per_device_train_batch_size"],
+        per_device_eval_batch_size=best_params["per_device_train_batch_size"],
+        learning_rate=best_params["learning_rate"],
         warmup_steps=500,
         weight_decay=0.01,
-        logging_dir="./logs",
+        logging_dir=f"./logs/seed_{seed}",
         logging_steps=100,
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="f1",
         report_to="none",
-        seed=s  # Ensure the trainer respects the seed
+        seed=seed,               # <-- Set the training seed
+        data_seed=seed,          # <-- Set the data seed for reproducibility
     )
 
     num_labels = np.unique(tokenized_train_dataset['labels']).shape[0]
-    final_model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=num_labels, trust_remote_code=True)
+    seed_model = AutoModelForSequenceClassification.from_pretrained(
+        MODEL_NAME, num_labels=num_labels, trust_remote_code=True
+    )
 
-    final_trainer = Trainer(
-        model=final_model,
+    seed_trainer = Trainer(
+        model=seed_model,
         args=final_training_args,
         train_dataset=tokenized_train_dataset,
         eval_dataset=tokenized_eval_dataset,
-        compute_metrics=compute_metrics
+        compute_metrics=compute_metrics,
     )
 
-    final_trainer.train()
-    metrics = final_trainer.evaluate()
-    
-    results_list.append({
-        "seed": s,
-        "F1": metrics["eval_f1"],
-        "Precision": metrics["eval_precision"],
-        "Recall": metrics["eval_recall"],
-        "MCC": metrics["eval_mcc"],
-        "Accuracy": metrics["eval_accuracy"],
-        "AUC": metrics["eval_auc"]
-    })
+    start_time = time.time()
+    seed_trainer.train()
+    end_time = time.time()
 
-# === 5. Save and Statistical Analysis ===
-df = pd.DataFrame(results_list)
-df.to_csv("genalm_results.csv", index=False)
-print("\nResults saved to genalm_results.csv")
+    duration = end_time - start_time
+    print(f"Seed {seed} training time: {int(duration // 60)}m {int(duration % 60)}s")
 
-metrics_list = ["F1", "Precision", "Recall", "MCC", "Accuracy", "AUC"]
-print("\n--- Final Statistical Report ---")
-for metric in metrics_list:
-    values = df[metric].values
+    eval_results = seed_trainer.evaluate()
+
+    seed_row = {
+        "seed":     seed,
+        "F1":       eval_results.get("eval_f1",               float('nan')),
+        "MCC":      eval_results.get("eval_matthews_corrcoef", float('nan')),
+        "Accuracy": eval_results.get("eval_accuracy",          float('nan')),
+        "AUC":      eval_results.get("eval_auc",               float('nan')),
+    }
+    all_seed_results.append(seed_row)
+
+    print(f"Seed {seed} results: F1={seed_row['F1']:.4f}, MCC={seed_row['MCC']:.4f}, "
+          f"Accuracy={seed_row['Accuracy']:.4f}, AUC={seed_row['AUC']:.4f}")
+
+    # Save the model for this seed
+    seed_trainer.save_model(f"{seed_output_dir}/{TASK_NAME}_seed_{seed}_final")
+
+# === 5. Save per-seed results to CSV ===
+print("\nStep 5: Saving per-seed results...")
+results_csv_path = f"./{OUTPUT_DIR}/{TASK_NAME}_seed_results.csv"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+results_df = pd.DataFrame(all_seed_results)
+results_df.to_csv(results_csv_path, index=False)
+print(f"Seed results saved to: {results_csv_path}")
+print(results_df.to_string(index=False))
+
+# === 6. Compute mean, std, and 95% CI across seeds ===
+print("\nStep 6: Computing statistics across seeds...")
+metrics = ["F1", "MCC", "Accuracy", "AUC"]
+
+print("\n=======================================================")
+print(f"Aggregated results for task: {TASK_NAME}")
+print("=======================================================")
+
+for metric in metrics:
+    values = results_df[metric].values
     n = len(values)
+
     mean = np.mean(values)
     sd = np.std(values, ddof=1)
+
     ci_low, ci_high = stats.t.interval(
         confidence=0.95,
-        df=n-1,
+        df=n - 1,
         loc=mean,
         scale=sd / np.sqrt(n)
     )
+
     print(f"{metric}: {mean:.4f} ± {sd:.4f}")
-    print(f"95% CI: [{ci_low:.4f}, {ci_high:.4f}]")
+    print(f"  95% CI: [{ci_low:.4f}, {ci_high:.4f}]")
+
+print("=======================================================")
+print("All done!")
