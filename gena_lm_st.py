@@ -62,15 +62,27 @@ def compute_metrics(eval_pred):
     # Compute softmax probabilities for AUC
     probs = torch.softmax(torch.tensor(logits), dim=-1).numpy()
     # Use probability of positive class (index 1) for binary AUC
+    # try:
+    #     auc = roc_auc_score(labels, probs[:, 1])
     try:
-        auc = roc_auc_score(labels, probs[:, 1])
+        num_classes = probs.shape[1]
+        if num_classes == 2:
+            auc = roc_auc_score(labels, probs[:, 1])
+        else:
+            auc = roc_auc_score(labels, probs, multi_class='ovr', average='macro')
     except ValueError:
         auc = float('nan')
 
     accuracy = accuracy_score(labels, predictions)
-    f1 = f1_score(labels, predictions, average='binary')
-    precision = precision_score(labels, predictions, average='binary')
-    recall = recall_score(labels, predictions, average='binary')
+    # f1 = f1_score(labels, predictions, average='binary')
+    # precision = precision_score(labels, predictions, average='binary')
+    # recall = recall_score(labels, predictions, average='binary')
+    num_classes = len(np.unique(labels))
+    avg = 'binary' if num_classes == 2 else 'macro'
+    
+    f1 = f1_score(labels, predictions, average=avg)
+    precision = precision_score(labels, predictions, average=avg)
+    recall = recall_score(labels, predictions, average=avg)
     mcc = matthews_corrcoef(labels, predictions)
 
     return {
@@ -86,7 +98,8 @@ def compute_metrics(eval_pred):
 print("Step 3: Starting hyperparameter tuning with Optuna...")
 
 def model_init(trial=None):
-    num_labels = np.unique(tokenized_train_dataset['labels']).shape[0]
+    # num_labels = np.unique(tokenized_train_dataset['labels']).shape[0]
+    num_labels = len(set(tokenized_train_dataset['labels']) | set(tokenized_eval_dataset['labels']))
     return AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=num_labels, trust_remote_code=True)
 
 def objective(trial):
@@ -161,7 +174,8 @@ for seed in SEEDS:
         data_seed=seed,          # <-- Set the data seed for reproducibility
     )
 
-    num_labels = np.unique(tokenized_train_dataset['labels']).shape[0]
+    # num_labels = np.unique(tokenized_train_dataset['labels']).shape[0]
+    num_labels = len(set(tokenized_train_dataset['labels']) | set(tokenized_eval_dataset['labels']))
     seed_model = AutoModelForSequenceClassification.from_pretrained(
         MODEL_NAME, num_labels=num_labels, trust_remote_code=True
     )
