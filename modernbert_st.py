@@ -55,7 +55,8 @@ eval_dataset  = tokenized_datasets["test"]
 
 # === Auto-detect binary vs multiclass ===
 #NUM_LABELS = len(set(train_dataset["labels"].tolist()) | set(eval_dataset["labels"].tolist()))
-NUM_LABELS = len(set(train_dataset["labels"].numpy().tolist()) | set(eval_dataset["labels"].numpy().tolist()))
+#NUM_LABELS = len(set(train_dataset["labels"].numpy().tolist()) | set(eval_dataset["labels"].numpy().tolist()))
+NUM_LABELS = len(set(int(x) for x in train_dataset["labels"]) | set(int(x) for x in eval_dataset["labels"]))
 IS_BINARY  = NUM_LABELS == 2
 AVG        = 'binary' if IS_BINARY else 'macro'
 
