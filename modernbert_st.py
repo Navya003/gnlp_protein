@@ -1,4 +1,4 @@
-# filename: fine_tune_modernbert_optuna.py
+# filename: modernbert_st.py
 
 # === OPTUNA HYPERPARAMETER TUNING SCRIPT ===
 import optuna
@@ -27,7 +27,7 @@ os.environ["WANDB_DISABLED"] = "true"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 # === Configuration ===
-MODEL_DIRECTORY = "/projects/lz25/navyat/nt/model_files_05"
+MODEL_DIRECTORY = "/projects/lz25/navyat/nt/Modern_bert_model"
 TASK_NAME = "promoter_all"
 NUM_TRIALS = 10
 TIMEOUT = 3600  # 1 hour timeout
@@ -202,11 +202,16 @@ def run_hyperparameter_tuning_and_evaluate():
             "MCC":      eval_results.get("eval_matthews_corrcoef", float('nan')),
             "Accuracy": eval_results.get("eval_accuracy",          float('nan')),
             "AUC":      eval_results.get("eval_auc",               float('nan')),
+            "Precision": eval_results.get("eval_precision",         float('nan')),
+            "Recall":    eval_results.get("eval_recall",            float('nan')),
+            "Time_sec":  round(duration, 2),
         }
         all_seed_results.append(seed_row)
 
         print(f"Seed {seed} results: F1={seed_row['F1']:.4f}, MCC={seed_row['MCC']:.4f}, "
-              f"Accuracy={seed_row['Accuracy']:.4f}, AUC={seed_row['AUC']:.4f}")
+          f"Accuracy={seed_row['Accuracy']:.4f}, AUC={seed_row['AUC']:.4f}, "
+          f"Precision={seed_row['Precision']:.4f}, Recall={seed_row['Recall']:.4f}, "
+          f"Time={seed_row['Time_sec']}s")
 
         seed_trainer.save_model(f"{seed_output_dir}/{TASK_NAME}_seed_{seed}_final")
 
@@ -221,7 +226,7 @@ def run_hyperparameter_tuning_and_evaluate():
 
     # --- Compute statistics ---
     print("\nStep 5: Computing statistics across seeds...")
-    metrics = ["F1", "MCC", "Accuracy", "AUC"]
+    metrics = ["F1", "MCC", "Accuracy", "AUC", "Precision", "Recall"]
 
     print("\n=======================================================")
     print(f"Aggregated results for task: {TASK_NAME} (ModernBERT)")
