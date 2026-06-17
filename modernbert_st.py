@@ -30,7 +30,7 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 MODEL_DIRECTORY = "/projects/lz25/navyat/nt/Modern_bert_model"
 TASK_NAME = "promoter_all"
 NUM_TRIALS = 10
-TIMEOUT = 3600  # 1 hour timeout
+TIMEOUT = 10800  # 3 hour timeout
 SEEDS = [42, 123, 2024, 3407, 999]  # Seeds for multi-run evaluation
 
 # === 1. Load and preprocess data only ONCE ===
